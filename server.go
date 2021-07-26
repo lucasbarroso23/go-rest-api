@@ -2,9 +2,12 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
+	"strings"
 	"sync"
 )
 
@@ -36,7 +39,18 @@ func (ph *productHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (ph *productHandler) get(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintf(w, "Hello from get")
+	defer ph.Unlock()
+	ph.Lock()
+	id, err := idFromUrl(r)
+	if err != nil {
+		respondWithJSON(w, http.StatusOK, ph.products)
+		return
+	}
+	if id >= len(ph.products) || id < 0 {
+		respondWithError(w, http.StatusNotFound, "Not found")
+		return
+	}
+	respondWithJSON(w, http.StatusOK, ph.products[id])
 }
 func (ph *productHandler) post(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "Hello from post")
@@ -59,6 +73,20 @@ func respondWithJSON(w http.ResponseWriter, code int, data interface{}) {
 	w.Write(response)
 }
 
+func idFromUrl(r *http.Request) (int, error) {
+	parts := strings.Split(r.URL.String(), "/")
+	if len(parts) != 3 {
+		return 0, errors.New("not found")
+	}
+	id, err := strconv.Atoi(parts[len(parts)-1])
+	if err != nil {
+		return 0, errors.New("not found")
+
+	}
+
+	return id, nil
+}
+
 func newProductHandler() *productHandler {
 	return &productHandler{
 		products: Products{
@@ -73,7 +101,7 @@ func main() {
 	port := ":8080"
 	ph := newProductHandler()
 	http.Handle("/products", ph)
-	http.Handle("products/", ph)
+	http.Handle("/products/", ph)
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "Hello World")
 	})
