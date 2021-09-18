@@ -87,11 +87,74 @@ func (ph *productHandler) post(w http.ResponseWriter, r *http.Request) {
 }
 
 func (ph *productHandler) put(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintf(w, "Hello from put")
+	defer r.Body.Close()
+
+	id, err := idFromUrl(r)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	body, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	ct := r.Header.Get("content-type")
+	if ct != "application/json" {
+		respondWithError(w, http.StatusUnsupportedMediaType, "content type 'application/json' required")
+	}
+
+	var product Product
+	err = json.Unmarshal(body, &product)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	defer ph.Unlock()
+
+	ph.Lock()
+
+	if id >= len(ph.products) || id < 0 {
+		respondWithError(w, http.StatusNotFound, "Not found")
+		return
+	}
+
+	if product.Name != "" {
+		ph.products[id].Name = product.Name
+	}
+
+	if product.Price != 0.0 {
+		ph.products[id].Price = product.Price
+	}
+
+	respondWithJSON(w, http.StatusOK, ph.products[id])
 }
 
 func (ph *productHandler) delete(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintf(w, "Hello from delete")
+	defer ph.Unlock()
+
+	ph.Lock()
+
+	id, err := idFromUrl(r)
+	if err != nil {
+		respondWithError(w, http.StatusNotFound, "Not found")
+		return
+	}
+	if id >= len(ph.products) || id < 0 {
+		respondWithError(w, http.StatusNotFound, "Not found")
+		return
+	}
+
+	if id < len(ph.products)-1 {
+		ph.products[len(ph.products)-1], ph.products[id] = ph.products[id], ph.products[len(ph.products)-1]
+	}
+
+	ph.products = ph.products[:len(ph.products)-1]
+
+	respondWithJSON(w, http.StatusNoContent, "")
 }
 
 func respondWithError(w http.ResponseWriter, code int, msg string) {
